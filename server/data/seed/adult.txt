@@ -1,0 +1,12 @@
+# Bundled starter list. Production lists are downloaded by `npm run update-blocklists`.
+pornhub.com
+xvideos.com
+xnxx.com
+xhamster.com
+redtube.com
+youporn.com
+spankbang.com
+chaturbate.com
+stripchat.com
+onlyfans.com
+brazzers.com

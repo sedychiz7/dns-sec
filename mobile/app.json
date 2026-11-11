@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "KinShield",
+    "slug": "kinshield",
+    "scheme": "kinshield",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.kinshield.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.kinshield.app"
+    },
+    "plugins": ["expo-router", "expo-secure-store", "expo-localization"],
+    "experiments": { "typedRoutes": false },
+    "extra": {
+      "apiUrl": "http://localhost:8080",
+      "revenueCat": {
+        "iosApiKey": "",
+        "androidApiKey": ""
+      },
+      "legal": {
+        "terms": "https://kinshield.example/terms",
+        "privacy": "https://kinshield.example/privacy",
+        "support": "mailto:support@kinshield.example"
+      }
+    }
+  }
+}

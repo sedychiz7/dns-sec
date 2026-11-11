@@ -1,0 +1,6 @@
+# Known test/abuse domains. Real feeds are downloaded by `npm run update-blocklists`.
+testsafebrowsing.appspot.com
+malware.testing.google.test
+coinhive.com
+coin-hive.com
+cryptoloot.pro

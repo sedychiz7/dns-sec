@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.expo/
+*.log
+.env
+server/data/*.db*
+server/data/certs/
+ios/
+android/
+server/data/blocklists/
