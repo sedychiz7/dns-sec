@@ -10,19 +10,19 @@ import { useSession } from '../../src/session';
 import { useColors } from '../../src/theme';
 
 export default function RouterSetup() {
-  const { network, putNetwork } = useSession();
+  const { network, putNetwork, refreshStatus } = useSession();
   const [setup, setSetup] = useState<SetupInfo | null>(null);
   const [brand, setBrand] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<'ok' | 'waiting' | null>(null);
+  const [result, setResult] = useState<'ok' | 'waiting' | 'elsewhere' | null>(null);
   const c = useColors();
 
   useEffect(() => {
     if (!network) return;
-    // Step 1 happens automatically: this phone is on the home Wi-Fi, so linking
-    // records the home's public IP. Parents never see or type it.
-    api
-      .linkNetwork(network.id)
+    // Step 1 happens automatically the first time: this phone is on the home
+    // Wi-Fi, so linking records the home's public IP. Parents never see or type it.
+    // Once linked we never re-link silently - the parent might be at work.
+    (network.linkedIp ? Promise.resolve(network) : api.linkNetwork(network.id))
       .then(putNetwork)
       .then(() => api.networkSetup(network.id))
       .then(setSetup)
@@ -36,9 +36,9 @@ export default function RouterSetup() {
   const check = async () => {
     setChecking(true);
     try {
-      await api.linkNetwork(network.id); // refresh in case the IP changed
       const s = await api.networkStatus(network.id);
-      setResult(s.protected ? 'ok' : 'waiting');
+      await refreshStatus();
+      setResult(s.protected ? 'ok' : s.atHome === false ? 'elsewhere' : 'waiting');
     } catch (err) {
       handleError(err);
     } finally {
@@ -114,6 +114,26 @@ export default function RouterSetup() {
           <P>
             We haven’t seen traffic yet. Routers can take a few minutes after saving - try restarting the router, then check again.
           </P>
+        </Card>
+      )}
+
+      {result === 'elsewhere' && (
+        <Card style={{ backgroundColor: c.warnBg, gap: 10 }}>
+          <P>
+            This phone isn’t on the connection we have saved for {network.name}. If you’re at home on your Wi-Fi right now, use this
+            connection instead.
+          </P>
+          <Button
+            title="I'm on my home Wi-Fi - use this connection"
+            icon="wifi"
+            onPress={() =>
+              api
+                .linkNetwork(network.id)
+                .then(putNetwork)
+                .then(check)
+                .catch(handleError)
+            }
+          />
         </Card>
       )}
 

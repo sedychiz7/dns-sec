@@ -191,3 +191,77 @@ test('revenuecat webhook grants and expires plans', async () => {
   store.setPlan(userId, 'pro', new Date(Date.now() - 1000).toISOString());
   assert.equal(store.getUser(userId)?.plan, 'free', 'expired plans fall back to free');
 });
+
+test('remote management: Free/Plus manage from home only, Pro from anywhere', async () => {
+  const { app, store } = setup();
+  const headers = await signup(app);
+  const HOME = '198.51.100.7';
+  const WORK = '203.0.113.99';
+  const net = (await app.inject({ method: 'POST', url: '/v1/networks', headers, payload: { name: 'Home' }, remoteAddress: HOME })).json();
+  await app.inject({ method: 'POST', url: `/v1/networks/${net.id}/link`, headers, remoteAddress: HOME });
+  await app.inject({ method: 'POST', url: '/v1/billing/sync', headers, payload: { plan: 'plus' } });
+
+  const patch = (ip: string) =>
+    app.inject({
+      method: 'PATCH',
+      url: `/v1/networks/${net.id}`,
+      headers,
+      remoteAddress: ip,
+      payload: { policy: { youtubeRestricted: true } },
+    });
+  const status = async (ip: string) =>
+    (await app.inject({ method: 'GET', url: `/v1/networks/${net.id}/status`, headers, remoteAddress: ip })).json();
+
+  // At home: allowed
+  assert.equal((await patch(HOME)).statusCode, 200);
+  assert.deepEqual([(await status(HOME)).atHome, (await status(HOME)).canManage], [true, true]);
+
+  // At work on Plus: viewing works, changing is an upsell to Pro
+  const away = await status(WORK);
+  assert.deepEqual([away.atHome, away.canManage], [false, false]);
+  assert.equal((await app.inject({ method: 'GET', url: `/v1/networks/${net.id}/stats`, headers, remoteAddress: WORK })).statusCode, 200);
+  const denied = await patch(WORK);
+  assert.equal(denied.statusCode, 402);
+  assert.equal(denied.json().feature, 'remoteManagement');
+  assert.equal(denied.json().requiredPlan, 'pro');
+  assert.equal(
+    (await app.inject({ method: 'GET', url: `/v1/networks/${net.id}/activity`, headers, remoteAddress: WORK })).statusCode,
+    402,
+  );
+
+  // Can't dodge the rule by re-linking "home" to the office...
+  const relink = await app.inject({ method: 'POST', url: `/v1/networks/${net.id}/link`, headers, remoteAddress: WORK });
+  assert.equal(relink.statusCode, 402);
+  assert.equal(store.resolveClient({ ip: HOME })?.networkId, net.id, 'home stays linked');
+
+  // ...but a genuine home IP change (router there already sends us DNS) re-links fine.
+  const NEW_HOME = '198.51.100.8';
+  const q = dnsPacket.encode({ type: 'query', id: 1, flags: dnsPacket.RECURSION_DESIRED, questions: [{ type: 'A', name: 'example.com', class: 'IN' }] });
+  await app.inject({ method: 'GET', url: `/dns-query?dns=${q.toString('base64url')}`, remoteAddress: NEW_HOME });
+  const moved = await app.inject({ method: 'POST', url: `/v1/networks/${net.id}/link`, headers, remoteAddress: NEW_HOME });
+  assert.equal(moved.statusCode, 200);
+  assert.equal(moved.json().linkedIp, NEW_HOME);
+
+  // Pro: manage from anywhere
+  await app.inject({ method: 'POST', url: '/v1/billing/sync', headers, payload: { plan: 'pro' } });
+  assert.equal((await patch(WORK)).statusCode, 200);
+  assert.equal((await status(WORK)).canManage, true);
+  const pause = await app.inject({ method: 'POST', url: `/v1/networks/${net.id}/pause`, headers, remoteAddress: WORK, payload: { minutes: 30 } });
+  assert.equal(pause.statusCode, 200);
+});
+
+test('device-only networks (no linked IP) are never restricted', async () => {
+  const { app } = setup();
+  const headers = await signup(app);
+  const net = (await app.inject({ method: 'POST', url: '/v1/networks', headers, payload: { name: 'Phone' } })).json();
+  const res = await app.inject({
+    method: 'PATCH',
+    url: `/v1/networks/${net.id}`,
+    headers,
+    remoteAddress: '203.0.113.50',
+    payload: { policy: { safeSearch: false } },
+  });
+  assert.equal(res.statusCode, 200);
+  const st = (await app.inject({ method: 'GET', url: `/v1/networks/${net.id}/status`, headers })).json();
+  assert.equal(st.atHome, null);
+});

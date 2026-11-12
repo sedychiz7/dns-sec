@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { Redirect } from 'expo-router';
 import { api, type PolicyPatch } from '../../src/api';
-import { H1, P, Screen, handleError } from '../../src/components/ui';
+import { H1, P, Screen, handleError, openPaywall } from '../../src/components/ui';
 import { PolicyEditor } from '../../src/components/PolicyEditor';
+import { AccessBanner } from '../../src/components/AccessBanner';
 import { useSession } from '../../src/session';
 
 export default function Filters() {
-  const { network, plan, putNetwork } = useSession();
+  const { network, plan, putNetwork, viewOnly } = useSession();
   const [, setSaving] = useState(false);
   if (!network) return <Redirect href="/setup" />;
 
   const change = async (patch: PolicyPatch) => {
+    if (viewOnly) return openPaywall('remoteManagement', 'pro');
     // Optimistic update so switches feel instant.
     const prev = network;
     putNetwork({
@@ -35,6 +37,7 @@ export default function Filters() {
         These rules apply to every device on {network.name} Wi-Fi.
         {network.profiles.length > 0 ? ' Kids with their own profile follow their profile’s rules.' : ''}
       </P>
+      <AccessBanner />
       <PolicyEditor policy={network.policy} plan={plan} onChange={change} listsHref="/lists" />
     </Screen>
   );

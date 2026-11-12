@@ -82,6 +82,9 @@ export class Recorder {
 }
 
 export class Resolver {
+  /** Source IPs we refused recently (no network linked). Proves a router at that IP points at us. */
+  private refused = new Map<string, number>();
+
   constructor(
     private store: Store,
     private lists: BlocklistLookup,
@@ -105,7 +108,13 @@ export class Resolver {
       ? this.store.resolveClient({ dnsId: hint.dnsId })
       : this.store.resolveClient({ ip: hint.ip });
     // Never act as an open resolver: unknown clients are refused (prevents amplification abuse).
-    if (!ctx) return reply(req, [], RCODE_REFUSED);
+    if (!ctx) {
+      if (!hint.dnsId) {
+        if (this.refused.size > 100_000) this.refused.clear();
+        this.refused.set(hint.ip, Date.now());
+      }
+      return reply(req, [], RCODE_REFUSED);
+    }
 
     const now = this.now();
     const policy = clampPolicy(ctx.policy, ctx.plan);
@@ -136,6 +145,12 @@ export class Resolver {
     } catch {
       return reply(req, [], RCODE_SERVFAIL);
     }
+  }
+
+  /** Did DNS queries arrive from this IP (with no network linked) in the last `withinMs`? */
+  sawUnlinkedTraffic(ip: string, withinMs = 30 * 60_000): boolean {
+    const t = this.refused.get(ip);
+    return t !== undefined && Date.now() - t < withinMs;
   }
 
   /**

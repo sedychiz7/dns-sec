@@ -1,9 +1,10 @@
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { type Policy, type Schedule, type Weekday, parseHHMM } from '@kinshield/shared';
 import { api, type PolicyPatch } from '../../src/api';
-import { Button, Card, H2, P, Screen, ToggleRow, handleError } from '../../src/components/ui';
+import { Button, Card, H2, P, Screen, ToggleRow, confirm, handleError, openPaywall } from '../../src/components/ui';
+import { AccessBanner } from '../../src/components/AccessBanner';
 import { PolicyEditor } from '../../src/components/PolicyEditor';
 import { useSession } from '../../src/session';
 import { useColors } from '../../src/theme';
@@ -47,12 +48,13 @@ function TimeStepper({ value, onChange }: { value: string; onChange: (v: string)
 
 export default function ProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { network, plan, can, refresh, putNetwork } = useSession();
+  const { network, plan, can, refresh, putNetwork, viewOnly } = useSession();
   const c = useColors();
   const profile = network?.profiles.find((p) => p.id === id);
   if (!network || !profile) return <Screen edges={['bottom']}><P muted>Profile not found.</P></Screen>;
 
   const save = async (patch: PolicyPatch) => {
+    if (viewOnly) return openPaywall('remoteManagement', 'pro');
     const optimistic: Policy = { ...profile.policy, ...patch, categories: { ...profile.policy.categories, ...patch.categories } } as Policy;
     putNetwork({ ...network, profiles: network.profiles.map((p) => (p.id === profile.id ? { ...p, policy: optimistic } : p)) });
     try {
@@ -79,6 +81,7 @@ export default function ProfileScreen() {
   return (
     <Screen edges={['bottom']}>
       <Stack.Screen options={{ title: `${profile.emoji} ${profile.name}` }} />
+      <AccessBanner />
 
       <Card style={{ gap: 10 }}>
         <H2>{pausedUntil ? `Paused until ${pausedUntil.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Pause internet'}</H2>
@@ -160,22 +163,15 @@ export default function ProfileScreen() {
         title="Remove profile"
         variant="danger"
         onPress={() =>
-          Alert.alert(`Remove ${profile.name}?`, `${profile.name}'s devices will stop being filtered until set up again.`, [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Remove',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  await api.deleteProfile(profile.id);
-                  await refresh();
-                  router.back();
-                } catch (err) {
-                  handleError(err);
-                }
-              },
-            },
-          ])
+          confirm(`Remove ${profile.name}?`, `${profile.name}'s devices will stop being filtered until set up again.`, 'Remove', async () => {
+            try {
+              await api.deleteProfile(profile.id);
+              await refresh();
+              router.back();
+            } catch (err) {
+              handleError(err);
+            }
+          })
         }
       />
       {!can('profiles') && <P muted>Your plan no longer includes profiles, so this child follows the household rules.</P>}

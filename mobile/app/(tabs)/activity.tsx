@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { type ActivityEntry, CATEGORIES, PLANS } from '@kinshield/shared';
 import { api } from '../../src/api';
 import { Button, Card, H1, P, Screen, handleError, openPaywall } from '../../src/components/ui';
+import { AccessBanner } from '../../src/components/AccessBanner';
 import { useSession } from '../../src/session';
 import { useColors } from '../../src/theme';
 
@@ -25,13 +26,14 @@ const PREVIEW: ActivityEntry[] = [
 ];
 
 export default function Activity() {
-  const { network, can } = useSession();
+  const { network, can, viewOnly } = useSession();
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [blockedOnly, setBlockedOnly] = useState(true);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const c = useColors();
-  const allowed = can('activityLog');
+  // Activity history is private data: viewing it away from home is part of Pro's remote access.
+  const allowed = can('activityLog') && !viewOnly;
 
   const load = useCallback(async () => {
     if (!network || !allowed) return;
@@ -55,6 +57,7 @@ export default function Activity() {
   return (
     <Screen refreshing={loading} onRefresh={load}>
       <H1>Activity</H1>
+      {can('activityLog') && <AccessBanner />}
       {allowed ? (
         <>
           <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -79,7 +82,7 @@ export default function Activity() {
           />
           <P muted>Kept for {PLANS[can('profiles') ? 'pro' : 'plus'].limits.activityRetentionDays} days, then deleted automatically.</P>
         </>
-      ) : (
+      ) : can('activityLog') ? null : (
         <Card style={{ gap: 10, borderColor: c.plus, borderWidth: 2 }}>
           <P>See which sites were blocked - and why - on every device. Spot problems before they become problems.</P>
           <Button title="Unlock with Plus" variant="plus" onPress={() => openPaywall('activityLog', 'plus')} />

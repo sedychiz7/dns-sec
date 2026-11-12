@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "dashboard:build": "expo export --platform web --output-dir dist"
   },
   "dependencies": {
     "@kinshield/shared": "*",

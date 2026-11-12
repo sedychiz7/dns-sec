@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { storage } from './storage';
-import { type Feature, type Network, type PlanId, type User, hasFeature } from '@kinshield/shared';
+import { type Feature, type Network, type PlanId, type StatusResponse, type User, hasFeature } from '@kinshield/shared';
 import { api, setToken } from './api';
 import { billing } from './billing';
 
@@ -14,6 +14,11 @@ interface Session {
   networks: Network[];
   network: Network | null;
   can: (feature: Feature) => boolean;
+  /** Where the parent is relative to the selected network, from the last status check. */
+  status: StatusResponse | null;
+  /** True when away from home without Pro: settings are view-only. */
+  viewOnly: boolean;
+  refreshStatus: () => Promise<void>;
   signIn: (mode: 'login' | 'signup', email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -29,6 +34,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [networks, setNetworks] = useState<Network[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [status, setStatus] = useState<StatusResponse | null>(null);
 
   const refresh = useCallback(async () => {
     const [{ user: u }, nets] = await Promise.all([api.me(), api.networks()]);
@@ -58,6 +64,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (user) billing.identify(user.id).catch(() => undefined);
   }, [user?.id]);
 
+  const currentId = (networks.find((n) => n.id === selectedId) ?? networks[0])?.id;
+  const refreshStatus = useCallback(async () => {
+    if (!currentId) return setStatus(null);
+    try {
+      setStatus(await api.networkStatus(currentId));
+    } catch {
+      // offline - keep the last known status
+    }
+  }, [currentId]);
+
+  // Re-check home/away when the network, plan or account changes.
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus, user?.plan]);
+
   const signIn = useCallback(
     async (mode: 'login' | 'signup', email: string, password: string) => {
       const res = mode === 'login' ? await api.login(email, password) : await api.signup(email, password);
@@ -86,6 +107,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       networks,
       network,
       can: (f) => hasFeature(plan, f),
+      status,
+      viewOnly: Boolean(status && !status.canManage),
+      refreshStatus,
       signIn,
       signOut,
       refresh,
@@ -95,7 +119,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       putNetwork: (n) => setNetworks((prev) => (prev.some((p) => p.id === n.id) ? prev.map((p) => (p.id === n.id ? n : p)) : [...prev, n])),
     };
-  }, [ready, user, networks, selectedId, signIn, signOut, refresh]);
+  }, [ready, user, networks, selectedId, signIn, signOut, refresh, status, refreshStatus]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

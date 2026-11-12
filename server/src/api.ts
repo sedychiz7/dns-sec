@@ -1,6 +1,9 @@
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import {
   type Feature,
@@ -172,6 +175,30 @@ export function buildApi(store: Store, resolver: Resolver) {
     return n;
   };
 
+  const clientIp = (req: FastifyRequest) => req.ip.replace(/^::ffff:/, '');
+
+  /** null = no home network linked yet, so "home" can't be determined. */
+  const isAtHome = (req: FastifyRequest, network: Network): boolean | null =>
+    network.linkedIp ? clientIp(req) === network.linkedIp : null;
+
+  /**
+   * Remote management is a Pro feature. On Free and Plus, settings can only be
+   * changed while the parent's phone is on the home network (same public IP
+   * as the router). Viewing status and stats always works, so away-from-home
+   * parents still see the dashboard - and the upgrade prompt.
+   * Networks set up per-device only (no linked IP) have no "home", so they
+   * are never restricted.
+   */
+  const requireManageAccess = (req: FastifyRequest, user: User, network: Network) => {
+    if (hasFeature(user.plan, 'remoteManagement')) return;
+    if (isAtHome(req, network) === false) {
+      throw new HttpError(402, 'upgrade_required', 'You’re away from home. Manage from anywhere with Pro.', {
+        feature: 'remoteManagement',
+        requiredPlan: 'pro',
+      });
+    }
+  };
+
   const ownProfile = (req: FastifyRequest, user: User) => {
     const { id } = req.params as { id: string };
     const found = store.getProfile(id, user.id);
@@ -253,6 +280,7 @@ export function buildApi(store: Store, resolver: Resolver) {
       z.object({ name: z.string().min(1).max(40).optional(), policy: z.unknown().optional() }),
       req.body,
     );
+    requireManageAccess(req, user, network);
     const policy = body.policy !== undefined ? applyPolicyPatch(network.policy, body.policy, user.plan) : undefined;
     store.updateNetwork(network.id, { name: body.name, policy });
     return store.getNetwork(network.id, user.id);
@@ -260,7 +288,9 @@ export function buildApi(store: Store, resolver: Resolver) {
 
   app.delete('/v1/networks/:id', async (req, reply) => {
     const user = authed(req);
-    store.deleteNetwork(ownNetwork(req, user).id);
+    const network = ownNetwork(req, user);
+    requireManageAccess(req, user, network);
+    store.deleteNetwork(network.id);
     return reply.status(204).send();
   });
 
@@ -273,7 +303,21 @@ export function buildApi(store: Store, resolver: Resolver) {
   app.post('/v1/networks/:id/link', async (req) => {
     const user = authed(req);
     const network = ownNetwork(req, user);
-    store.linkIp(network.id, req.ip.replace(/^::ffff:/, ''));
+    const ip = clientIp(req);
+    // Without Pro, "home" can't simply be moved to wherever the parent is (e.g. the office) to dodge
+    // the home-only rule. Moving to a new IP is accepted only if a router there already sends us DNS.
+    if (
+      network.linkedIp &&
+      network.linkedIp !== ip &&
+      !hasFeature(user.plan, 'remoteManagement') &&
+      !resolver.sawUnlinkedTraffic(ip)
+    ) {
+      throw new HttpError(402, 'upgrade_required', 'You’re away from home. Manage from anywhere with Pro.', {
+        feature: 'remoteManagement',
+        requiredPlan: 'pro',
+      });
+    }
+    store.linkIp(network.id, ip);
     return store.getNetwork(network.id, user.id);
   });
 
@@ -283,15 +327,25 @@ export function buildApi(store: Store, resolver: Resolver) {
   });
 
   app.get('/v1/networks/:id/status', async (req) => {
-    const n = ownNetwork(req, authed(req));
+    const user = authed(req);
+    const n = ownNetwork(req, user);
     const recent = n.lastSeenAt && Date.now() - new Date(n.lastSeenAt).getTime() < 15 * 60_000;
-    return { protected: Boolean(recent), lastSeenAt: n.lastSeenAt, linkedIp: n.linkedIp, yourIp: req.ip.replace(/^::ffff:/, '') };
+    const atHome = isAtHome(req, n);
+    return {
+      protected: Boolean(recent),
+      lastSeenAt: n.lastSeenAt,
+      linkedIp: n.linkedIp,
+      yourIp: clientIp(req),
+      atHome,
+      canManage: atHome !== false || hasFeature(user.plan, 'remoteManagement'),
+    };
   });
 
   app.post('/v1/networks/:id/pause', async (req) => {
     const user = authed(req);
     const network = ownNetwork(req, user);
     if (!hasFeature(user.plan, 'pauseInternet')) throw upgradeRequired('pauseInternet');
+    requireManageAccess(req, user, network);
     const { minutes } = parse(z.object({ minutes: z.number().int().min(1).max(24 * 60).nullable() }), req.body);
     const pausedUntil = minutes ? new Date(Date.now() + minutes * 60_000).toISOString() : null;
     store.updateNetwork(network.id, { policy: { ...network.policy, pausedUntil } });
@@ -320,6 +374,7 @@ export function buildApi(store: Store, resolver: Resolver) {
     const user = authed(req);
     const network = ownNetwork(req, user);
     if (!hasFeature(user.plan, 'activityLog')) throw upgradeRequired('activityLog');
+    requireManageAccess(req, user, network);
     const q = parse(
       z.object({
         limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -342,6 +397,7 @@ export function buildApi(store: Store, resolver: Resolver) {
     const user = authed(req);
     const network = ownNetwork(req, user);
     if (!hasFeature(user.plan, 'profiles')) throw upgradeRequired('profiles');
+    requireManageAccess(req, user, network);
     if (network.profiles.length >= PLANS[user.plan].limits.profiles) {
       throw new HttpError(400, 'limit_reached', `You can have up to ${PLANS[user.plan].limits.profiles} profiles.`);
     }
@@ -356,8 +412,9 @@ export function buildApi(store: Store, resolver: Resolver) {
 
   app.patch('/v1/profiles/:id', async (req): Promise<Profile> => {
     const user = authed(req);
-    const { profile } = ownProfile(req, user);
+    const { profile, network } = ownProfile(req, user);
     if (!hasFeature(user.plan, 'profiles')) throw upgradeRequired('profiles');
+    requireManageAccess(req, user, network);
     const body = parse(
       z.object({
         name: z.string().min(1).max(30).optional(),
@@ -373,8 +430,9 @@ export function buildApi(store: Store, resolver: Resolver) {
 
   app.post('/v1/profiles/:id/pause', async (req) => {
     const user = authed(req);
-    const { profile } = ownProfile(req, user);
+    const { profile, network } = ownProfile(req, user);
     if (!hasFeature(user.plan, 'pauseInternet')) throw upgradeRequired('pauseInternet');
+    requireManageAccess(req, user, network);
     const { minutes } = parse(z.object({ minutes: z.number().int().min(1).max(24 * 60).nullable() }), req.body);
     const pausedUntil = minutes ? new Date(Date.now() + minutes * 60_000).toISOString() : null;
     store.updateProfile(profile.id, { policy: { ...profile.policy, pausedUntil } });
@@ -387,7 +445,9 @@ export function buildApi(store: Store, resolver: Resolver) {
   });
 
   app.delete('/v1/profiles/:id', async (req, reply) => {
-    const { profile } = ownProfile(req, authed(req));
+    const user = authed(req);
+    const { profile, network } = ownProfile(req, user);
+    requireManageAccess(req, user, network);
     store.deleteProfile(profile.id);
     return reply.status(204).send();
   });
@@ -463,6 +523,19 @@ export function buildApi(store: Store, resolver: Resolver) {
   });
 
   app.get('/v1/plans', async () => PLAN_ORDER.map((id) => PLANS[id]));
+
+  // ----- web dashboard -----
+  // The parent dashboard is the mobile app built for the web, served from the same origin as the API,
+  // so parents can sign in from any browser (e.g. at work). Pro unlocks changing settings from there.
+  const dashboardIndex = path.join(config.dashboardDir, 'index.html');
+  if (fs.existsSync(dashboardIndex)) {
+    app.register(fastifyStatic, { root: config.dashboardDir, wildcard: false, index: false });
+    app.setNotFoundHandler((req, reply) => {
+      const isPage = req.method === 'GET' && !req.url.startsWith('/v1/') && !req.url.startsWith('/dns-query');
+      if (isPage) return reply.type('text/html').send(fs.createReadStream(dashboardIndex));
+      return reply.status(404).send({ error: 'not_found', message: 'Not found.' });
+    });
+  }
 
   return app;
 }

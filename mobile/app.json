@@ -13,8 +13,14 @@
     "android": {
       "package": "com.kinshield.app"
     },
-    "plugins": ["expo-router", "expo-secure-store", "expo-localization"],
-    "experiments": { "typedRoutes": false },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-localization"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
     "extra": {
       "apiUrl": "http://localhost:8080",
       "revenueCat": {
@@ -25,7 +31,12 @@
         "terms": "https://kinshield.example/terms",
         "privacy": "https://kinshield.example/privacy",
         "support": "mailto:support@kinshield.example"
-      }
+      },
+      "dashboardUrl": "https://app.kinshield.example"
+    },
+    "web": {
+      "output": "single",
+      "bundler": "metro"
     }
   }
 }

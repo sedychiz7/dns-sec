@@ -93,4 +93,8 @@ export interface StatusResponse {
   linkedIp: string | null;
   /** The IP this request came from - if it differs from linkedIp the router IP changed. */
   yourIp: string;
+  /** true = request came from the home network, false = away, null = no home network linked yet. */
+  atHome: boolean | null;
+  /** Whether settings can be changed from where the parent is right now. */
+  canManage: boolean;
 }

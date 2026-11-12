@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import type {
   ActivityEntry,
@@ -15,7 +16,15 @@ import type {
   User,
 } from '@kinshield/shared';
 
-export const API_URL: string = (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? 'http://localhost:8080';
+/**
+ * Native apps use extra.apiUrl. The web dashboard is served by the API server
+ * itself, so it talks to its own origin (override with EXPO_PUBLIC_API_URL).
+ */
+export const API_URL: string =
+  process.env.EXPO_PUBLIC_API_URL ||
+  (Platform.OS === 'web' && typeof window !== 'undefined'
+    ? window.location.origin
+    : ((Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? 'http://localhost:8080'));
 
 export class ApiError extends Error {
   constructor(

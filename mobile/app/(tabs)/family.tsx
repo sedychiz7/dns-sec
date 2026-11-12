@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import { Redirect, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { PLANS } from '@kinshield/shared';
 import { api } from '../../src/api';
-import { Button, Card, H1, H2, P, Screen, handleError, openPaywall } from '../../src/components/ui';
+import { Button, Card, H1, H2, P, Screen, handleError, notify, openPaywall } from '../../src/components/ui';
+import { AccessBanner } from '../../src/components/AccessBanner';
 import { useSession } from '../../src/session';
 import { useColors } from '../../src/theme';
 
@@ -51,10 +52,8 @@ export default function Family() {
       await refresh();
       setAdding(false);
       setName('');
-      Alert.alert(`${p.name} added`, `Now set up ${p.name}'s phone or tablet so their rules apply.`, [
-        { text: 'Later' },
-        { text: 'Set up device', onPress: () => router.push({ pathname: '/setup/device', params: { profileId: p.id } }) },
-      ]);
+      notify(`${p.name} added`, `Next, set up ${p.name}'s phone or tablet so their rules apply.`);
+      router.push({ pathname: '/setup/device', params: { profileId: p.id } });
     } catch (err) {
       handleError(err);
     } finally {
@@ -66,6 +65,7 @@ export default function Family() {
     <Screen>
       <H1>Family</H1>
       <P muted>Each child gets their own rules on their own devices - at home, at school and on mobile data.</P>
+      <AccessBanner />
 
       {network.profiles.map((p) => {
         const paused = p.policy.pausedUntil && new Date(p.policy.pausedUntil) > new Date();

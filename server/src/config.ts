@@ -38,6 +38,8 @@ export const config = {
   dbFile: process.env.DB_FILE ?? path.join(root, 'data', 'kinshield.db'),
   blocklistDir: process.env.BLOCKLIST_DIR ?? path.join(root, 'data', 'blocklists'),
   seedDir: path.join(root, 'data', 'seed'),
+  /** Built web dashboard (`npm run dashboard:build`). Served at / when present. */
+  dashboardDir: process.env.DASHBOARD_DIR ?? path.join(root, '..', 'mobile', 'dist'),
   /** HMAC secret for session tokens. MUST be set in production. */
   authSecret: process.env.AUTH_SECRET ?? (isProd ? '' : 'dev-only-insecure-secret'),
   /** Shared secret RevenueCat sends in the Authorization header of webhooks. */

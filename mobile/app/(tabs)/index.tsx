@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import type { StatsResponse, StatusResponse } from '@kinshield/shared';
+import type { StatsResponse } from '@kinshield/shared';
 import { api } from '../../src/api';
-import { Button, Card, H1, H2, P, PlanBadge, Screen, Stat, handleError, openPaywall } from '../../src/components/ui';
+import { Button, Card, H1, H2, P, PlanBadge, Screen, Stat, confirm, handleError, openPaywall } from '../../src/components/ui';
+import { AccessBanner } from '../../src/components/AccessBanner';
 import { useSession } from '../../src/session';
 import { useColors } from '../../src/theme';
 
@@ -17,10 +18,10 @@ function useTick(ms: number) {
 }
 
 export default function Home() {
-  const { network, plan, can, putNetwork, refresh } = useSession();
-  const [status, setStatus] = useState<StatusResponse | null>(null);
+  const { network, plan, can, putNetwork, refresh, status, refreshStatus } = useSession();
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [choosingPause, setChoosingPause] = useState(false);
   const c = useColors();
   useTick(30_000);
 
@@ -28,15 +29,14 @@ export default function Home() {
     if (!network) return;
     setLoading(true);
     try {
-      const [s, st] = await Promise.all([api.networkStatus(network.id), api.stats(network.id, 1)]);
-      setStatus(s);
+      const [, st] = await Promise.all([refreshStatus(), api.stats(network.id, 1)]);
       setStats(st);
     } catch (err) {
       handleError(err);
     } finally {
       setLoading(false);
     }
-  }, [network?.id]);
+  }, [network?.id, refreshStatus]);
 
   useFocusEffect(
     useCallback(() => {
@@ -49,28 +49,40 @@ export default function Home() {
   const pausedUntil = network.policy.pausedUntil && new Date(network.policy.pausedUntil) > new Date() ? new Date(network.policy.pausedUntil) : null;
   const isProtected = status?.protected ?? false;
   // Most home internet IPs change now and then. If ours moved, the parent re-links from home in one tap.
-  const ipMoved = Boolean(status && !status.protected && status.linkedIp && status.yourIp !== status.linkedIp);
+  const ipMoved = Boolean(status && !status.protected && status.atHome === false);
 
-  const relink = async () => {
-    try {
-      putNetwork(await api.linkNetwork(network.id));
-      await load();
-    } catch (err) {
-      handleError(err);
-    }
+  const relink = () =>
+    confirm(
+      `Use this connection for ${network.name}?`,
+      `Only do this while this device is on your ${network.name} Wi-Fi - otherwise ${network.name} stops being filtered.`,
+      'Use this connection',
+      async () => {
+        try {
+          putNetwork(await api.linkNetwork(network.id));
+          await load();
+        } catch (err) {
+          handleError(err);
+        }
+      },
+    );
+
+  const runPause = (minutes: number | null) => {
+    setChoosingPause(false);
+    api.pauseNetwork(network.id, minutes).then(putNetwork).catch(handleError);
   };
 
   const pause = () => {
     if (!can('pauseInternet')) return openPaywall('pauseInternet');
-    const run = (minutes: number | null) =>
-      api.pauseNetwork(network.id, minutes).then(putNetwork).catch(handleError);
-    if (pausedUntil) return run(null);
-    Alert.alert('Pause the internet', `Block all websites on ${network.name} Wi-Fi for…`, [
-      { text: '15 minutes', onPress: () => run(15) },
-      { text: '1 hour', onPress: () => run(60) },
-      { text: 'Until tomorrow', onPress: () => run(Math.round((new Date().setHours(24, 0, 0, 0) - Date.now()) / 60000) + 7 * 60) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    if (pausedUntil) return runPause(null);
+    setChoosingPause((v) => !v);
+  };
+
+  /** Minutes until the next 7:00 AM ("until morning"). */
+  const untilMorning = () => {
+    const next = new Date();
+    next.setHours(7, 0, 0, 0);
+    if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
+    return Math.min(24 * 60, Math.ceil((next.getTime() - Date.now()) / 60_000));
   };
 
   return (
@@ -100,10 +112,12 @@ export default function Home() {
         </Card>
       </Pressable>
 
+      <AccessBanner />
+
       {ipMoved && (
-        <Card style={{ backgroundColor: c.warnBg, gap: 8 }}>
-          <P>Your home internet address may have changed. If you’re on your home Wi-Fi right now, tap below to reconnect.</P>
-          <Button title="I'm home - reconnect" icon="wifi" onPress={relink} />
+        <Card style={{ gap: 8 }}>
+          <P muted>Not seeing traffic from home? If you’re on your home Wi-Fi right now, its address may have changed.</P>
+          <Button title="I'm home - reconnect" icon="wifi" variant="secondary" onPress={relink} />
         </Card>
       )}
 
@@ -147,6 +161,23 @@ export default function Home() {
           <Button title="Add device" icon="add" variant="secondary" onPress={() => router.push('/setup')} />
         </View>
       </View>
+
+      {choosingPause && (
+        <Card style={{ gap: 10 }}>
+          <P>Block all websites on {network.name} Wi-Fi for…</P>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[
+              { label: '15 min', minutes: 15 },
+              { label: '1 hour', minutes: 60 },
+              { label: 'Until 7 AM', minutes: untilMorning() },
+            ].map((o) => (
+              <View key={o.label} style={{ flex: 1 }}>
+                <Button title={o.label} variant="secondary" onPress={() => runPause(o.minutes)} />
+              </View>
+            ))}
+          </View>
+        </Card>
+      )}
 
       {stats && stats.topBlocked.length > 0 && (
         <Card>

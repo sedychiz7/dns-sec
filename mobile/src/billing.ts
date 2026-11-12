@@ -24,7 +24,15 @@ export interface PlanOffer {
 }
 
 const keys = (Constants.expoConfig?.extra?.revenueCat ?? {}) as { iosApiKey?: string; androidApiKey?: string };
-const apiKey = Platform.OS === 'ios' ? keys.iosApiKey : keys.androidApiKey;
+const apiKey = Platform.OS === 'ios' ? keys.iosApiKey : Platform.OS === 'android' ? keys.androidApiKey : undefined;
+
+/**
+ * App Store / Play rules: subscriptions are bought in the mobile app. The web
+ * dashboard therefore can't sell plans - except in demo builds
+ * (EXPO_PUBLIC_DEMO_BILLING=1) used for previews and testing.
+ */
+export const webCanPurchase = process.env.EXPO_PUBLIC_DEMO_BILLING === '1';
+export const purchasesAvailable = Platform.OS !== 'web' || webCanPurchase;
 export const demoBilling = !apiKey;
 
 let configured = false;

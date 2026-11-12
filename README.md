@@ -35,6 +35,7 @@ Plans are defined in [`shared/src/plans.ts`](shared/src/plans.ts). The server en
 | Bedtime & homework schedules | | | ✓ |
 | Pause internet (household or one child) | | | ✓ |
 | Block social media / games / dating | | | ✓ |
+| **Manage from anywhere (app + web dashboard)** | home Wi-Fi only | home Wi-Fi only | ✓ |
 | Locations (e.g. grandparents' house) | 1 | 1 | 3 |
 | Free trial | | 7 days | 7 days |
 
@@ -45,6 +46,7 @@ To change prices or move a feature between tiers, edit that one file. The paywal
 - **The Free plan shows what it misses.** For Free users the resolver also checks every *allowed* query against the ad/tracker lists. The home screen then says *"1,284 ads & trackers got through today. Try Plus free for 7 days"*, using the family's own numbers.
 - **Every locked switch is a sales prompt.** Paid toggles show a 🔒 PLUS / PRO badge and open a paywall with a matching headline (e.g. "Pause the internet with one tap"). The server returns `402 upgrade_required` with the plan to upsell, so new paid features get a paywall without extra app code.
 - **Paying users see results right away.** After an upgrade, newly unlocked protections that are on by default (ads, trackers, gambling) switch on automatically for every network and child.
+- **Remote control is Pro.** On Free/Plus, changes only work while the parent is on the home network. Away from home the app and dashboard are view-only, with a "Manage from anywhere with Pro" banner. Tapping any switch opens a paywall headed "Manage your home from anywhere".
 - **Yearly is the default choice** and the paywall shows the saving (37%). Pro is labeled "Best for families".
 - **Win-back:** cancelling never deletes settings, so re-subscribing restores everything in one tap.
 
@@ -68,6 +70,24 @@ Router / device ──DNS──▶ KinShield resolver ──▶ who is asking? (
   Per-device protection also works on mobile data and other Wi-Fi networks.
 - **Not an open resolver:** queries from unknown IPs or ids get `REFUSED`, which prevents DNS-amplification abuse.
 - **Privacy:** Free keeps only daily counters. Plus and Pro keep domain-level history, which is pruned automatically to the plan's retention period. Client-subnet data is never forwarded upstream.
+
+## Remote management & web dashboard (Pro)
+
+The parent's phone and the resolver both reach the same cloud API, so "home" is defined as the home network's public IP (the one linked during setup).
+
+- **Home/away check:** `server/src/api.ts → requireManageAccess`. On Free/Plus, a request that changes something (filters, lists, pause, profiles, deleting a network) or reads the activity log gets `402 upgrade_required (feature: remoteManagement)` when its source IP isn't the linked home IP. Status and stats stay readable everywhere. Networks set up only per-device have no "home" and are never restricted.
+- **No loophole via re-linking:** without Pro, "home" can only move to a new IP if a router at that IP is already sending us DNS. That way a parent can't simply link the office instead. Genuine ISP address changes still re-link fine.
+- **Web dashboard:** the same Expo app, built for browsers and served by the API server at `/`, so parents can sign in from any computer:
+  ```bash
+  npm run dashboard:build -w mobile   # outputs mobile/dist; the server serves it automatically (or set DASHBOARD_DIR)
+  ```
+  Store rules mean the dashboard doesn't sell plans. It tells parents to subscribe in the phone app. Build with `EXPO_PUBLIC_DEMO_BILLING=1` for a demo where the paywall works on the web too. Set `extra.dashboardUrl` in `app.json` to the public dashboard address shown to Pro users in the app.
+- **IPv4/IPv6 caveat:** home detection compares the IP that calls the API with the IP the router sends DNS from. Routers almost always send DNS over IPv4. Serve the API on an IPv4-only hostname (A record, no AAAA), or a home phone on IPv6 will look "away".
+
+<p>
+  <img src="docs/screenshots/12-away-view-only.png" width="200" alt="Away from home on Plus: view-only">
+  <img src="docs/screenshots/13-web-dashboard.png" width="520" alt="Web dashboard on a desktop browser">
+</p>
 
 ## Run it locally
 

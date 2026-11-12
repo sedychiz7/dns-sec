@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { type Feature, type PlanId, PLANS } from '@kinshield/shared';
-import { billing, demoBilling, type Period, type PlanOffer } from '../src/billing';
+import { billing, demoBilling, purchasesAvailable, type Period, type PlanOffer } from '../src/billing';
 import { Button, H1, P, Screen, handleError, notify } from '../src/components/ui';
 import { useSession } from '../src/session';
 import { useColors } from '../src/theme';
@@ -22,6 +22,7 @@ const FEATURE_PITCH: Partial<Record<Feature | 'multiNetwork', string>> = {
   pauseInternet: 'Pause the internet with one tap',
   extraCategories: 'Limit social media & games',
   multiNetwork: 'Protect grandma’s house too',
+  remoteManagement: 'Manage your home from anywhere',
 };
 
 const legal = (Constants.expoConfig?.extra?.legal ?? {}) as { terms?: string; privacy?: string };
@@ -127,6 +128,18 @@ export default function Paywall() {
         );
       })}
 
+      {params.feature === 'remoteManagement' && (
+        <P muted>
+          Change filters, pause the internet and check activity from work, a trip, or any web browser - not just when you’re on your home Wi-Fi.
+        </P>
+      )}
+
+      {!purchasesAvailable ? (
+        <View style={{ backgroundColor: c.card, borderRadius: 16, padding: 16, gap: 6, borderWidth: 1, borderColor: c.border }}>
+          <Text style={{ color: c.text, fontWeight: '700', fontSize: 16 }}>Subscribe in the KinShield app</Text>
+          <P muted>Open KinShield on your phone and go to Account → See plans. Your dashboard here updates automatically.</P>
+        </View>
+      ) : (
       <Button
         title={
           current === selected
@@ -140,6 +153,7 @@ export default function Paywall() {
         loading={busy}
         disabled={!offer || current === selected}
       />
+      )}
       <Button title="Restore purchases" variant="secondary" onPress={() => billing.restore().then(refresh).catch(handleError)} />
 
       <Text style={{ color: c.muted, fontSize: 11, lineHeight: 16, textAlign: 'center' }}>

@@ -5,12 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { PLANS, normalizeDomain } from '@kinshield/shared';
 import { api, type PolicyPatch } from '../src/api';
 import { Button, Card, H2, P, Screen, handleError, openPaywall } from '../src/components/ui';
+import { AccessBanner } from '../src/components/AccessBanner';
 import { useSession } from '../src/session';
 import { useColors } from '../src/theme';
 
 export default function Lists() {
   const { profileId } = useLocalSearchParams<{ profileId?: string }>();
-  const { network, plan, can, putNetwork } = useSession();
+  const { network, plan, can, putNetwork, viewOnly } = useSession();
   const [input, setInput] = useState('');
   const c = useColors();
   if (!network) return null;
@@ -30,6 +31,7 @@ export default function Lists() {
   }
 
   const save = async (patch: PolicyPatch) => {
+    if (viewOnly) return openPaywall('remoteManagement', 'pro');
     try {
       if (profile) {
         const updated = await api.updateProfile(profile.id, { policy: patch });
@@ -70,6 +72,7 @@ export default function Lists() {
 
   return (
     <Screen edges={['bottom']}>
+      <AccessBanner />
       <P muted>
         {profile ? `Only for ${profile.name}.` : 'For everyone on this network.'} Subdomains are included automatically.
       </P>

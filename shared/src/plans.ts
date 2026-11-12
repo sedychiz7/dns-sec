@@ -37,7 +37,12 @@ export type Feature =
   /** Social media, gaming, dating categories. */
   | 'extraCategories'
   /** Weekly email summary for parents. */
-  | 'weeklyReport';
+  | 'weeklyReport'
+  /**
+   * Change settings and view activity from anywhere (work, travel) via the
+   * app or the web dashboard. Without it, changes only work from home Wi-Fi.
+   */
+  | 'remoteManagement';
 
 export interface PlanLimits {
   networks: number;
@@ -81,6 +86,7 @@ const PRO_FEATURES: Feature[] = [
   'pauseInternet',
   'extraCategories',
   'weeklyReport',
+  'remoteManagement',
 ];
 
 export const PLANS: Record<PlanId, Plan> = {
@@ -103,6 +109,7 @@ export const PLANS: Record<PlanId, Plan> = {
       'Block malware, phishing & scam sites',
       'SafeSearch on Google, Bing & DuckDuckGo',
       'One home network',
+      'Manage settings while you’re home',
     ],
   },
   plus: {
@@ -144,6 +151,7 @@ export const PLANS: Record<PlanId, Plan> = {
     },
     highlights: [
       'Everything in Plus',
+      'Manage from anywhere - phone or web dashboard',
       'Separate rules for each child',
       'Bedtime & homework schedules',
       'Pause the internet with one tap',

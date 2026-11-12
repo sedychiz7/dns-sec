@@ -1,14 +1,15 @@
-import { Alert, Linking, Text, View } from 'react-native';
+import { Linking, Platform, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import Constants from 'expo-constants';
 import { PLANS } from '@kinshield/shared';
 import { api } from '../../src/api';
 import { billing, demoBilling } from '../../src/billing';
-import { Button, Card, Divider, H1, H2, LinkRow, P, PlanBadge, Screen, handleError, openPaywall } from '../../src/components/ui';
+import { Button, Card, CopyField, Divider, H1, H2, LinkRow, P, PlanBadge, Screen, confirm, handleError, notify, openPaywall } from '../../src/components/ui';
 import { useSession } from '../../src/session';
 import { useColors } from '../../src/theme';
 
 const legal = (Constants.expoConfig?.extra?.legal ?? {}) as { terms?: string; privacy?: string; support?: string };
+const dashboardUrl = (Constants.expoConfig?.extra?.dashboardUrl as string | undefined) ?? '';
 
 export default function Account() {
   const { user, plan, networks, network, selectNetwork, signOut, refresh, can } = useSession();
@@ -55,12 +56,32 @@ export default function Account() {
               .restore()
               .then(async (restored) => {
                 await refresh();
-                Alert.alert('Purchases restored', `You're on ${PLANS[restored].name}.`);
+                notify('Purchases restored', `You're on ${PLANS[restored].name}.`);
               })
               .catch(handleError)
           }
         />
       </Card>
+
+      {Platform.OS !== 'web' && dashboardUrl ? (
+        <Card style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <H2>Manage from anywhere</H2>
+            <PlanBadge plan="pro" />
+          </View>
+          {can('remoteManagement') ? (
+            <>
+              <P muted>Change settings from this app wherever you are, or sign in on any computer:</P>
+              <CopyField label="Web dashboard" value={dashboardUrl} />
+            </>
+          ) : (
+            <>
+              <P muted>Right now settings can only be changed while you’re on your home Wi-Fi. Pro lets you manage from work, on a trip, or from any web browser.</P>
+              <Button title="Unlock remote control" variant="pro" icon="globe-outline" onPress={() => openPaywall('remoteManagement', 'pro')} />
+            </>
+          )}
+        </Card>
+      ) : null}
 
       <Card>
         <H2>Locations</H2>
@@ -104,25 +125,19 @@ export default function Account() {
         title="Delete account"
         variant="danger"
         onPress={() =>
-          Alert.alert(
+          confirm(
             'Delete your account?',
             'This removes your settings and history and stops protection. Cancel any subscription in your app store too.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    await api.deleteAccount();
-                    await signOut();
-                    router.replace('/welcome');
-                  } catch (err) {
-                    handleError(err);
-                  }
-                },
-              },
-            ],
+            'Delete',
+            async () => {
+              try {
+                await api.deleteAccount();
+                await signOut();
+                router.replace('/welcome');
+              } catch (err) {
+                handleError(err);
+              }
+            },
           )
         }
       />

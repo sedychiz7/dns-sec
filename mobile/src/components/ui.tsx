@@ -38,7 +38,8 @@ export function Screen({
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} edges={edges}>
       <ScrollView
-        contentContainerStyle={{ padding: space, paddingBottom: space * 3, gap: space }}
+        // On a desktop browser (web dashboard) keep content a readable width.
+        contentContainerStyle={{ padding: space, paddingBottom: space * 3, gap: space, width: '100%', maxWidth: 720, alignSelf: 'center' }}
         refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
       >
@@ -149,7 +150,19 @@ export function handleError(err: unknown) {
   notify('Oops', err instanceof Error ? err.message : 'Something went wrong.');
 }
 
-/** Alert that also works in the web preview (react-native-web's Alert is a no-op). */
+/** Yes/no question that works in the app and the web dashboard. */
+export function confirm(title: string, message: string, confirmText: string, onConfirm: () => void) {
+  if (Platform.OS === 'web') {
+    if (globalThis.confirm?.(`${title}\n\n${message}`)) onConfirm();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: confirmText, style: 'destructive', onPress: onConfirm },
+  ]);
+}
+
+/** Alert that also works in the web dashboard (react-native-web's Alert is a no-op). */
 export function notify(title: string, message: string) {
   if (Platform.OS === 'web') globalThis.alert?.(`${title}\n\n${message}`);
   else Alert.alert(title, message);
